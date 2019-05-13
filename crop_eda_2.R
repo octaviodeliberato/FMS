@@ -24,11 +24,11 @@ imp <- mice(prod_soja, m = 1, method = "rf")
 prod_df <- complete(imp)
 
 
-crop_df <- read_csv("crop.df.csv")
+crop_df <- read_csv("crop_df.csv")
 crop_df %<>% filter(species == "soy")
 crop_df$ciclo <- prod_df$ciclo
 crop_df$safra <- prod_df$safra
 crop_df$epoca <- prod_df$epoca
 crop_df %<>% select(material:species, ciclo, safra, epoca, 
                     everything(), -species)
-rio::export(crop_df, file = "crop_df.csv") #  somente soja
+rio::export(crop_df, file = "soy_df.csv") #  somente soja
