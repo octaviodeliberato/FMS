@@ -70,7 +70,7 @@ A partir dos dataset enriquecido das culturas de soja, repetiremos o procediment
 soja_df <- read.csv("soja_df.csv", encoding = "UTF-8")
 soja_df$material <- substr(soja_df$material, 1, 1) # try to balance things out
 barplot(table(soja_df$material)) # still not balanced, but let's give it a shot
-soja_df$material %<>% factor(.)
+soja_df$material %<>% factor()
 soja_df <- soja_df %>% mutate_at(vars(matches("rain_")), factor)
 
 ## Not run (this may take some time to complete):

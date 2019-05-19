@@ -159,22 +159,27 @@ cumsum(table(crop$harvest)/nrow(crop)*100) # até 2015 para treinamento, resto p
 g <- ggplot(data = subset(crop, species == 'soy'), 
             aes(x = harvest, y = productivity)) + geom_boxplot() + 
   facet_wrap(~ site, ncol = 4) + labs(title = 'Produtividade da Soja')
-g
+g + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
 g1 <- ggplot(data = subset(crop, species == 'corn'), 
             aes(x = harvest, y = productivity)) + geom_boxplot() + 
   facet_wrap(~ site, ncol = 4) + labs(title = 'Produtividade do Milho')
-g1
+g1 + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
 crop.sum <- crop %>% group_by(species, site) %>% 
   summarise(avgProd = mean(productivity), sdProd = sd(productivity)) %>%
   arrange(desc(avgProd))
 crop.sum
+
 g2 <- ggplot(crop, aes(x = productivity, fill = species)) +
   geom_density(alpha = 0.5)
 g2
+
 summary(crop.sum$avgProd)
+
 g3 <- ggplot(data = crop.sum, aes(x = site, y = avgProd, color = species)) +
   geom_point(size = 2)
-g3
+g3 + theme(axis.text.x = element_text(angle = 90, hjust = 1))
 ```
 
 Dos gráficos, nota-se que há variação significativa entre os lugares, o ano de plantio e o tipo de cultura. De alguma maneira, todas essas variáveis deverão, então, constar do modelo final.
