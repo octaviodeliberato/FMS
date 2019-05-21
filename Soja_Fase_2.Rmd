@@ -1,0 +1,129 @@
+---
+title: "Soja Fase 2"
+subtitle: "AgriPredict+"
+author: "Octavio Deliberato Neto"
+date: "13/05/2019"
+output: 
+  html_document: 
+    toc: yes
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, 
+                      message = FALSE, comment = "")
+```
+
+```{r packs, echo=FALSE}
+library(tidyverse)
+library(magrittr)
+library(mice)
+```
+
+## 1. Introdução
+
+O objetivo deste relatório é detalhar as ações adicionais que foram tomadas para aprimorar o modelo de previsão de produtividade das culturas de soja da FMS, depois do recebimento de dados adicionais da Fundação.
+
+## 2. Preparação de dados
+
+Os dados adicionais foram tratados e adicionados ao *dataset* construído anteriormente em `Fase 1.Rmd`, conforme:
+
+```{r eda}
+prod_soja <- readxl::read_excel("data-raw-2/prod_soja.xls",
+                                col_types = c("numeric", "numeric", "text",
+                                              "text", "text", "text", "text"))
+colnames(prod_soja) <- c("prod", "ciclo", "material", "safra", "site", 
+                         "epoca", "periodo")
+prod_soja$material <- str_replace_all(prod_soja$material, "[^[:alnum:]]", "")
+seeds <- substr(prod_soja$material, 1, 2)
+tbl.seeds <- table(seeds)
+sum(tbl.seeds/sum(tbl.seeds)*100) # check sum=100
+barplot(tbl.seeds/sum(tbl.seeds)*100) # types of materials
+prod_soja$site <- str_replace_all(prod_soja$site, "[^[:alnum:]]", "")
+prod_soja$site <- str_replace_all(prod_soja$site, "[[:punct:]]", "")
+prod_soja$site %<>% tolower(.)
+prod_soja$material <- tolower(seeds)
+prod_soja$periodo <- NULL
+prod_soja$epoca <- substr(prod_soja$epoca, start = 1, stop = 1)
+prod_soja$safra <- prod_soja$safra %>% gsub(pattern = "/", replacement = "-")
+prod_soja <- prod_soja %>% mutate_if(is.character, factor)
+set.seed(300)
+imp <- mice(prod_soja, m = 1, method = "rf")
+prod_df <- mice::complete(imp)
+
+crop_df <- read_csv("crop_df.csv")
+crop_df %<>% filter(species == "soy")
+crop_df$ciclo <- prod_df$ciclo
+# crop_df$safra <- prod_df$safra
+crop_df$epoca <- prod_df$epoca
+crop_df %<>% select(material:species, ciclo, epoca, everything(), -species)
+
+# rio::export(crop_df, file = "soja_df.csv") #  somente soja
+summary(crop_df)
+```
+
+## 3. Modelagem
+
+A partir dos dataset enriquecido das culturas de soja, repetiremos o procedimento de modelagem adotado em `Fase 1.Rmd`, a fim de verificar se haverá melhoria de performance do modelo:
+
+```{r soja_rf}
+library(caret)
+soja_df <- read.csv("soja_df.csv", encoding = "UTF-8")
+soja_df$material <- substr(soja_df$material, 1, 1) # try to balance things out
+barplot(table(soja_df$material)) # still not balanced, but let's give it a shot
+soja_df$material %<>% factor()
+soja_df <- soja_df %>% mutate_at(vars(matches("rain_")), factor)
+
+## Not run (this may take some time to complete):
+## Random Forest
+# ctrl <- trainControl(method = "cv", selectionFunction = 'oneSE')
+# grid <- expand.grid(.mtry = c(6, 8, 10), .splitrule = c("extratrees"),
+#                     .min.node.size = c(1, 3, 5))
+# set.seed(300)
+# dim(soja_df)
+# m.rf <- train(productivity ~ ., data = soja_df, method = "ranger",
+#               metric = "RMSE", trControl = ctrl, tuneGrid = grid)
+# 
+# m.rf
+# yhat.rf <- predict(m.rf, soja_df)
+# plot(soja_df$productivity, yhat.rf)
+# abline(lm(yhat.rf ~ soja_df$productivity), col = 'darkred', lwd = 2)
+# cor(soja_df$productivity, yhat.rf)^2
+# saveRDS(m.rf, 'soja_rf.rds')
+## End(Not run)
+
+# In order to save the time required to train the RF model
+soja.rf <- readRDS('soja_rf.rds')
+yhat.rf <- predict(soja.rf, soja_df)
+plot(soja_df$productivity, yhat.rf,
+     main = "Random Forest",
+     xlab = "Produtividade, sacas / ha",
+     ylab = "Produtividade calculada, sacas / ha")
+abline(lm(yhat.rf ~ soja_df$productivity), col = 'darkred', lwd = 2)
+r2.new <- cor(soja_df$productivity, yhat.rf)^2
+text(20, 80, paste0("R2 = ", round(r2.new, 3)))
+```
+
+Vamos agora comparar esse desempenho com o do modelo construído em `Fase 1.Rmd`, considerando somente as culturas de soja:
+
+```{r compara_soja}
+m.rf <- readRDS('m_rf.rds')
+m.rf
+crop_df <- read.csv("crop_df.csv", encoding = "UTF-8")
+crop_df %<>% filter(species == "soy")
+crop_df$material <- substr(crop_df$material, 1, 1)
+crop_df[, 1:14] <- crop_df[, 1:14] %>% lapply(as.factor)
+yhat.rf <- predict(m.rf, crop_df)
+plot(crop_df$productivity, yhat.rf,
+     main = "Random Forest",
+     xlab = "Produtividade, sacas / ha",
+     ylab = "Produtividade calculada, sacas / ha")
+abline(lm(yhat.rf ~ crop_df$productivity), col = 'darkred', lwd = 2)
+r2.old <- cor(crop_df$productivity, yhat.rf)^2
+text(20, 80, paste0("R2 = ", round(r2.old, 3)))
+
+c(r2.new, r2.old)
+```
+
+Portanto, o enriquecimento do *dataset* de soja trouxe um significativo aumento de performance do modelo de previsão de produtividade, com R2 de `r round(r2.old, 3)` para `r round(r2.new, 3)`.
