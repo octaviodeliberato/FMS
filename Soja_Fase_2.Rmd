@@ -55,9 +55,10 @@ prod_df <- mice::complete(imp)
 crop_df <- read_csv("crop_df.csv")
 crop_df %<>% filter(species == "soy")
 crop_df$ciclo <- prod_df$ciclo
-# crop_df$safra <- prod_df$safra
+crop_df$safra <- prod_df$safra
 crop_df$epoca <- prod_df$epoca
-crop_df %<>% select(material:species, ciclo, epoca, everything(), -species)
+crop_df %<>% select(material:species, ciclo, safra, epoca, 
+                    everything(), -species)
 
 # rio::export(crop_df, file = "soja_df.csv") #  somente soja
 summary(crop_df)
@@ -74,6 +75,8 @@ soja_df$material <- substr(soja_df$material, 1, 1) # try to balance things out
 barplot(table(soja_df$material)) # still not balanced, but let's give it a shot
 soja_df$material %<>% factor()
 soja_df <- soja_df %>% mutate_at(vars(matches("rain_")), factor)
+# A variável safra não deve fazer parte do treinamento do modelo
+soja_df$safra <- NULL
 
 ## Not run (this may take some time to complete):
 ## Random Forest

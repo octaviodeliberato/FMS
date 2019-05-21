@@ -153,4 +153,4 @@ r2.new <- cor(soja$productivity, yhat.rf)^2
 text(20, 80, paste0("R2 = ", round(r2.new, 3)))
 ```
 
-Em comparação com o modelo construído em `Soja Fase 2.Rmd`, com R^2^ = 0,696, este último modelo apresenta desempenho ligeiramente superior, com R^2^ = `r round(r2.new, 3)`.
+Em comparação com o modelo construído em `Soja Fase 2.Rmd`, com R^2^ = 0,727, este último modelo apresenta desempenho ligeiramente superior, com R^2^ = `r round(r2.new, 3)`. Não obstante a melhoria de desempenho, houve um aumento significativo da complexidade computacional do modelo final.
