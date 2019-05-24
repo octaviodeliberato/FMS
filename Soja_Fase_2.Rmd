@@ -103,8 +103,9 @@ plot(soja_df$productivity, yhat.rf,
      main = "Random Forest",
      xlab = "Produtividade, sacas / ha",
      ylab = "Produtividade calculada, sacas / ha")
-abline(lm(yhat.rf ~ soja_df$productivity), col = 'darkred', lwd = 2)
-r2.new <- cor(soja_df$productivity, yhat.rf)^2
+lin.mod <- lm(yhat.rf ~ soja_df$productivity)
+abline(lin.mod, col = 'darkred', lwd = 2)
+r2.new <- summary(lin.mod)$adj.r.squared
 text(20, 80, paste0("R2 = ", round(r2.new, 3)))
 ```
 
@@ -122,8 +123,9 @@ plot(crop_df$productivity, yhat.rf,
      main = "Random Forest",
      xlab = "Produtividade, sacas / ha",
      ylab = "Produtividade calculada, sacas / ha")
-abline(lm(yhat.rf ~ crop_df$productivity), col = 'darkred', lwd = 2)
-r2.old <- cor(crop_df$productivity, yhat.rf)^2
+lin.mod <- lm(yhat.rf ~ crop_df$productivity)
+abline(lin.mod, col = 'darkred', lwd = 2)
+r2.old <- summary(lin.mod)$adj.r.squared
 text(20, 80, paste0("R2 = ", round(r2.old, 3)))
 
 c(r2.new, r2.old)

@@ -148,9 +148,10 @@ plot(soja$productivity, yhat.rf,
      main = "Random Forest",
      xlab = "Produtividade, sacas / ha",
      ylab = "Produtividade calculada, sacas / ha")
-abline(lm(yhat.rf ~ soja$productivity), col = 'darkred', lwd = 2)
-r2.new <- cor(soja$productivity, yhat.rf)^2
+lin.mod <- lm(yhat.rf ~ soja$productivity)
+abline(lin.mod, col = 'darkred', lwd = 2)
+r2.new <- summary(lin.mod)$adj.r.squared
 text(20, 80, paste0("R2 = ", round(r2.new, 3)))
 ```
 
-Em comparação com o modelo construído em `Soja Fase 2.Rmd`, com R^2^ = 0,727, este último modelo apresenta desempenho ligeiramente superior, com R^2^ = `r round(r2.new, 3)`. Não obstante a melhoria de desempenho, houve um aumento significativo da complexidade computacional do modelo final.
+Em comparação com o modelo construído em `Soja Fase 2.Rmd`, com R^2^ = `0.727`, este último modelo apresenta desempenho ligeiramente superior, com R^2^ = `r round(r2.new, 3)`. Não obstante a melhoria de desempenho, houve um aumento significativo da complexidade computacional do modelo final.

@@ -64,28 +64,46 @@ milho$safra <- NULL
 milho %<>% mutate_if(is.character, factor)
 milho %<>% mutate_at(vars(matches("rain_")), factor)
 milho %>% glimpse()
-rio::export(x = milho, file = "milho_final.csv")
+# rio::export(x = milho, file = "milho_final.csv")
 
 library(caret)
 ## Not run (this may take some time to complete):
 # Random Forest
-ctrl <- trainControl(method = "cv", selectionFunction = 'oneSE')
-grid <- expand.grid(.mtry = c(6, 10, 14, 18, 22), .splitrule = c("extratrees"),
-                    .min.node.size = c(1, 3, 5, 7))
-milho$material <- as.factor(milho$material %>% substr(1, 1))
-set.seed(300)
-
-m.rf <- train(productivity ~ ., data = milho, method = "ranger",
-              metric = "RMSE", trControl = ctrl, tuneGrid = grid)
-
-
-m.rf
-yhat.rf <- predict(m.rf, milho)
-plot(milho$productivity, yhat.rf)
-abline(lm(yhat.rf ~ milho$productivity), col = 'darkred', lwd = 2)
-cor(milho$productivity, yhat.rf)^2
-saveRDS(m.rf, 'milho_final.rds')
+# ctrl <- trainControl(method = "cv", selectionFunction = 'oneSE')
+# grid <- expand.grid(.mtry = c(6, 10, 14, 18, 22), .splitrule = c("extratrees"),
+#                     .min.node.size = c(1, 3, 5, 7))
+# milho$material <- as.factor(milho$material %>% substr(1, 1))
+# set.seed(300)
+# 
+# m.rf <- train(productivity ~ ., data = milho, method = "ranger",
+#               metric = "RMSE", trControl = ctrl, tuneGrid = grid)
+# 
+# 
+# m.rf
+# yhat.rf <- predict(m.rf, milho)
+# plot(milho$productivity, yhat.rf)
+# abline(lm(yhat.rf ~ milho$productivity), col = 'darkred', lwd = 2)
+# cor(milho$productivity, yhat.rf)^2
+# saveRDS(m.rf, 'milho_final.rds')
 ## End(Not run)
+
+milho <- read_csv("milho_final.csv")
+milho$material %<>% substr(1, 1)
+milho %<>% mutate_if(is.character, factor)
+milho %<>% mutate_at(vars(matches("rain_")), factor)
+milho %>% glimpse()
+
+milho.rf <- readRDS("milho_final.rds")
+yhat.rf <- predict(milho.rf, milho)
+plot(milho$productivity, yhat.rf,
+     main = "Random Forest",
+     xlab = "Produtividade, sacas / ha",
+     ylab = "Produtividade calculada, sacas / ha")
+lin.mod <- lm(yhat.rf ~ milho$productivity)
+abline(lin.mod, col = 'darkred', lwd = 2)
+r2.new <- summary(lin.mod)$adj.r.squared
+r2.new
+text(20, 150, paste0("R2 = ", round(r2.new, 3)))
 
 # Comparação com a fase anterior
 m.rf <- readRDS('m_rf.rds')
@@ -99,7 +117,10 @@ plot(crop_df$productivity, yhat.rf,
      main = "Random Forest",
      xlab = "Produtividade, sacas / ha",
      ylab = "Produtividade calculada, sacas / ha")
-abline(lm(yhat.rf ~ crop_df$productivity), col = 'darkred', lwd = 2)
-r2.old <- cor(crop_df$productivity, yhat.rf)^2
+lin.mod <- lm(yhat.rf ~ crop_df$productivity)
+abline(lin.mod, col = 'darkred', lwd = 2)
+r2.old <- summary(lin.mod)$adj.r.squared
 r2.old
-# text(20, 80, paste0("R2 = ", round(r2.old, 3)))
+text(20, 150, paste0("R2 = ", round(r2.old, 3)))
+
+# Conclusão: a inclusão dos dados de solo não melhorou o desempenho do modelo, do ponto de vista do R2 ajustado.
