@@ -4,8 +4,23 @@ library(readxl)
 library(readr)
 library(stringr)
 
+# Preparação dos dados de milho
 crop_df <- read_csv("crop_df.csv")
 crop_df %<>% filter(species == "corn")
+crop_df$species <- NULL
+
+crop <- read_csv("data-raw/crop.csv")
+crop %<>% filter(species == "corn")
+crop$id <- NULL
+crop %<>% select(material, site, safra=harvest, productivity)
+
+crop_df %<>% arrange(desc(productivity))
+crop %<>% arrange(desc(productivity))
+identical(crop_df$productivity, crop$productivity)
+crop_df$safra <- crop$safra
+rm(crop)
+crop_df %<>% arrange(c(safra))
+crop_df %<>% select(material, safra, everything(), productivity)
 hist(crop_df$productivity)
 rug(crop_df$productivity)
 
@@ -38,20 +53,53 @@ imp$imp$PH_CACL2
 solo_milho <- mice::complete(imp)
 
 round(colMeans(is.na(solo_milho)) * 100)
-
-DataExplorer::create_report(solo_milho)
+rio::export(x = solo_milho, file = "solo_milho.csv")
 
 milho <- merge(x = crop_df, y = solo_milho,
               by.x = c("site", "safra"), by.y = c("site", "safra"),
               all = FALSE)
-milho <- milho %>% select(-productivity, everything(), productivity)
+milho %<>% select(site, material, depth, everything())
+milho %<>% select(-productivity, everything(), productivity)
+milho$safra <- NULL
+milho %<>% mutate_if(is.character, factor)
+milho %<>% mutate_at(vars(matches("rain_")), factor)
 milho %>% glimpse()
-milho$depth %<>% factor()
+rio::export(x = milho, file = "milho_final.csv")
 
-solo_milho_grp <- solo_milho %>% group_by(depth, safra)
-solo_milho_grp$site <- NULL
-solo_milho_summ <- solo_milho_grp %>% summarise_all(.funs = mean)
-View(solo_milho_summ)
-plot_bar(solo_milho_summ)
-plot_density(filter(solo_milho_summ, depth == "00-20"))
-plot_density(filter(solo_milho_summ, depth == "20-40"))
+library(caret)
+## Not run (this may take some time to complete):
+# Random Forest
+ctrl <- trainControl(method = "cv", selectionFunction = 'oneSE')
+grid <- expand.grid(.mtry = c(6, 10, 14, 18, 22), .splitrule = c("extratrees"),
+                    .min.node.size = c(1, 3, 5, 7))
+milho$material <- as.factor(milho$material %>% substr(1, 1))
+set.seed(300)
+
+m.rf <- train(productivity ~ ., data = milho, method = "ranger",
+              metric = "RMSE", trControl = ctrl, tuneGrid = grid)
+
+
+m.rf
+yhat.rf <- predict(m.rf, milho)
+plot(milho$productivity, yhat.rf)
+abline(lm(yhat.rf ~ milho$productivity), col = 'darkred', lwd = 2)
+cor(milho$productivity, yhat.rf)^2
+saveRDS(m.rf, 'milho_final.rds')
+## End(Not run)
+
+# Comparação com a fase anterior
+m.rf <- readRDS('m_rf.rds')
+m.rf
+crop_df <- read.csv("crop_df.csv", encoding = "UTF-8")
+crop_df %<>% filter(species == "corn")
+crop_df$material <- substr(crop_df$material, 1, 1)
+crop_df[, 1:14] <- crop_df[, 1:14] %>% lapply(as.factor)
+yhat.rf <- predict(m.rf, crop_df)
+plot(crop_df$productivity, yhat.rf,
+     main = "Random Forest",
+     xlab = "Produtividade, sacas / ha",
+     ylab = "Produtividade calculada, sacas / ha")
+abline(lm(yhat.rf ~ crop_df$productivity), col = 'darkred', lwd = 2)
+r2.old <- cor(crop_df$productivity, yhat.rf)^2
+r2.old
+# text(20, 80, paste0("R2 = ", round(r2.old, 3)))
