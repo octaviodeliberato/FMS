@@ -42,7 +42,7 @@ sum(tbl.seeds/sum(tbl.seeds)*100) # check sum=100
 barplot(tbl.seeds/sum(tbl.seeds)*100) # types of materials
 prod_soja$site <- str_replace_all(prod_soja$site, "[^[:alnum:]]", "")
 prod_soja$site <- str_replace_all(prod_soja$site, "[[:punct:]]", "")
-prod_soja$site %<>% tolower(.)
+prod_soja$site %<>% tolower()
 prod_soja$material <- tolower(seeds)
 prod_soja$periodo <- NULL
 prod_soja$epoca <- substr(prod_soja$epoca, start = 1, stop = 1)

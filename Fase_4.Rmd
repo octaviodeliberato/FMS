@@ -1,0 +1,297 @@
+---
+title: "FMS Fase 4 - Soja"
+author: "Octavio Deliberato Neto"
+date: "20/06/2019"
+output: 
+  html_document: 
+    toc: yes
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, 
+                      comment = "", warning = FALSE)
+```
+
+```{r packages, include=FALSE}
+library(tidyverse)
+library(magrittr)
+library(skimr)
+library(Boruta)
+library(caret)
+library(parallel)
+library(doParallel)
+```
+
+## Introdução
+
+Este relatório descreve as etapas executadas para concluir a Fase 4 do Projeto FMS - Estimativa da Produtividade de Culturas de Soja, e mostra também os códigos correspondentes em R.
+
+Em relação às etapas anteriores do projeto, notam-se as seguintes diferenças:
+
+- As culturas de milho foram retiradas do escopo do projeto
+
+- O código dado a cada semente foi usado integralmente, e não somente o primeiro caractere, como nas etapas anteriores
+
+- Em consequência do item anterior, as sementes com baixa participação no conjunto de dados, cujo critério será detalhado posteriormente, foram eliminadas da análise. Esse critério constituiu premissa do projeto, em detrimento das opções de sub ou sobreamostragem
+
+- Para o modelo preditivo final, bem como para cada semente isoladamente, determinaram-se as importâncias relativas de cada uma das variáveis na estimativa da produtividade
+
+## Preparação dos dados
+
+A primeira etapa da preparação de dados consiste em retomar o arquivo de dados de chuva da Fase 3 do projeto, em que os níveis de precipitação haviam sido agrupados em médias gerais trimestrais. A descrição da motivação para essa abordagem pode ser encontrada nos relatórios das fases anteriores do projeto.
+
+Em seguida, combinaremos esse *dataset* com os dados de produtividade preparados anteriormente pelo Rodrigo Stelzer e com os dados de ciclo e época da soja, enviados mais recentemente pelo Sr. Alex Melotto, e verificaremos a integridade do *dataset* resultante.
+
+Eis o código correspondente:
+
+```{r prep1}
+library(knitr)
+unwanted_array = list('Š'='S', 'š'='s', 'Ž'='Z', 'ž'='z', 'À'='A', 'Á'='A', 
+                      'Â'='A', 'Ã'='A', 'Ä'='A', 'Å'='A', 'Æ'='A', 'Ç'='C', 
+                      'È'='E', 'É'='E', 'Ê'='E', 'Ë'='E', 'Ì'='I', 'Í'='I', 
+                      'Î'='I', 'Ï'='I', 'Ñ'='N', 'Ò'='O', 'Ó'='O', 'Ô'='O', 
+                      'Õ'='O', 'Ö'='O', 'Ø'='O', 'Ù'='U', 'Ú'='U', 'Û'='U', 
+                      'Ü'='U', 'Ý'='Y', 'Þ'='B', 'ß'='Ss', 'à'='a', 'á'='a', 
+                      'â'='a', 'ã'='a', 'ä'='a', 'å'='a', 'æ'='a', 'ç'='c',
+                      'è'='e', 'é'='e', 'ê'='e', 'ë'='e', 'ì'='i', 'í'='i', 
+                      'î'='i', 'ï'='i', 'ð'='o', 'ñ'='n', 'ò'='o', 'ó'='o', 
+                      'ô'='o', 'õ'='o','ö'='o', 'ø'='o', 'ù'='u', 'ú'='u', 
+                      'û'='u', 'ý'='y', 'ý'='y', 'þ'='b', 'ÿ'='y')
+
+# Dados 1 - clima (mm de precipitação)
+clima_qrt <- read_csv("clima_qrt.csv")
+str(clima_qrt)
+clima.summ <- clima_qrt %>% group_by(harvest) %>% 
+  summarise(rain.min = min(rain.mm), rain.max = max(rain.mm),
+            rain.avg = mean(rain.mm), 
+            rain.rng = max(rain.mm) - min(rain.mm))
+
+# Dados 2 - produtividade, arquivo do Stelzer
+crop <- read.csv("data-raw/crop.csv", encoding="UTF-8", stringsAsFactors = F)
+str(crop)
+str(crop)
+
+crop.df <- merge(crop, clima.summ, by = 'harvest')
+crop.df %<>% filter(species == 'soy')
+crop.df %<>% DataExplorer::drop_columns(c('id', 'species'))
+crop.df$site %<>% str_replace_all(" ", "")
+crop.df$site <- chartr(paste(names(unwanted_array), collapse=''),
+                           paste(unwanted_array, collapse=''),
+                           crop.df$site)
+crop.df %<>% select(harvest, site, material, everything(), productivity)
+crop.df$material %<>% str_remove_all(" ")
+crop.df$material <- chartr(paste(names(unwanted_array), collapse=''),
+                           paste(unwanted_array, collapse=''),
+                           crop.df$material)
+crop.df %<>% select(everything(), -productivity, productivity)
+skim(crop.df) %>% skimr::kable()
+
+# Dados 3 - ciclo e época da soja
+prod_soja <- readxl::read_excel("data-raw-2/prod_soja.xls",
+                                col_types = c("numeric", "numeric", "text",
+                                              "text", "text", "text", "text"))
+colnames(prod_soja) <- c("prod", "ciclo", "material", "safra", "site", 
+                         "epoca", "periodo")
+prod_soja$site <- str_replace_all(prod_soja$site, "[^[:alnum:]]", "")
+prod_soja$site <- str_replace_all(prod_soja$site, "[[:punct:]]", "")
+prod_soja$site %<>% tolower()
+prod_soja$periodo <- NULL
+prod_soja$epoca <- substr(prod_soja$epoca, start = 1, stop = 1)
+prod_soja$safra <- prod_soja$safra %>% gsub(pattern = "/", replacement = "-")
+prod_soja <- prod_soja %>% mutate_if(is.character, factor)
+skim_with(numeric = list(hist = NULL))
+skim(prod_soja) %>% skimr::kable()
+```
+
+Nota-se a grande quantidade de `NAs` na variável `ciclo`, o que nos obriga a:
+
+1. Descartá-la da análise, ou
+
+2. Adotar uma estratégia de preenchimento dos `NAs`
+
+Adotou-se a 2a opção, já que, em análises anteriores, essa variável mostrou-se importante. O código a seguir estima a variável `ciclo` onde ela estiver faltando com o auxílio de `random forests`:
+
+```{r ciclo}
+## Not run (this may take some time to complete):
+# set.seed(300)
+# imp <- mice::mice(prod_soja, m = 1, method = "rf")
+# saveRDS(imp, "imp_prod_soja.rds")
+## End(Not run)
+imp <- readRDS("imp_prod_soja.rds")
+prod_df <- mice::complete(imp)
+prod_df$material %<>% tolower()
+prod_df$material %<>% str_remove_all(" ")
+prod_df$harvest <- prod_df$safra %>% substr(1, 4) %>% as.numeric()
+prod_df$safra <- NULL
+prod_df %<>% mutate(productivity = prod)
+prod_df %<>% select(harvest, site, material, everything(), -prod)
+prod_df$site <- chartr(paste(names(unwanted_array), collapse=''),
+                           paste(unwanted_array, collapse=''),
+                           prod_df$site)
+prod_df$material <- chartr(paste(names(unwanted_array), collapse=''),
+                           paste(unwanted_array, collapse=''),
+                           prod_df$material)
+skim_with(numeric = list(hist = NULL))
+skim(prod_df) %>% skimr::kable()
+```
+
+Comparando-se as estatísticas antes e depois da interpolação, a estratégia adotada parece ter dado bons resultados, já que a distribuição original dos valores permaneceu praticamente inalterada depois do preenchimento dos `NAs`.
+
+A última etapa antes da construção do *dataset* final é preparar os dados de solo, enviados pela FMS durante a Fase 3 do projeto, para que sejam unidos ao *dataframe* construído anteriormente, conforme o *script* a seguir:
+
+```{r solo}
+solo_soja <- read_csv("solo_soja.csv")
+solo_soja$site <- chartr(paste(names(unwanted_array), collapse=''),
+                       paste(unwanted_array, collapse=''),
+                       solo_soja$site)
+solo_soja$harvest <- solo_soja$safra %>% substr(1, 4)
+solo_soja$safra <- NULL
+skim_with(numeric = list(hist = NULL))
+skim(solo_soja) %>% skimr::kable()
+```
+
+Finalmente, procede-se à construção do *dataset* final, conforme:
+
+```{r soja-df}
+crop <- merge(crop.df, prod_df, by = c('harvest', 'site', 'material'))
+crop$productivity.x <- NULL
+crop %<>% mutate(productivity = productivity.y)
+crop$productivity.y <- NULL
+skim_with(numeric = list(hist = NULL))
+skim(crop) %>% skimr::kable()
+
+soja <- merge(crop, solo_soja, by = 'site')
+soja %<>% DataExplorer::drop_columns(c('harvest.x', 'harvest.y'))
+soja %<>% select(everything(), -productivity, productivity)                    
+soja$rain.rng <- NULL
+soja <- soja %>% group_by(site, material, epoca, depth) %>% summarise_all(mean)
+glimpse(soja)
+# saveRDS(soja, "soja_df.rds")
+```
+
+## Modelagem
+
+Terminada a etapa de construção do *dataset* final, podemos avançar com a modelagem matemática da produtividade das culturas de soja.
+
+Primeiramente, investiguemos a participação porcentual das diversas sementes no *dataframe* final:
+
+```{r seeds}
+soja_df <-  soja %>% ungroup()
+materiais <- soja_df %>% group_by(material) %>% summarise(nobs=n()) %>% 
+  arrange(desc(nobs)) %>% ungroup()
+glimpse(materiais)
+
+cutoff <- 0.05 * sum(materiais$nobs) # nenhuma obs atende a esse critério
+cat("Linha de corte: ", round(cutoff, 0), " registros, no mínimo.")
+```
+
+A linha de corte estabelecida como critério de projeto, a saber, 5% de participação mínima no *dataset*, não é atingida por nenhuma semente, de modo que outro critério faz-se necessário.
+
+Nossa proposta é tomar as sementes cuja participação porcentual seja igual ou superior à média do *dataset*, ou seja:
+
+```{r df-final}
+avg.obs <- mean(materiais$nobs)
+materiais %<>% filter(nobs >= avg.obs)
+
+ind <- soja_df$material %in% materiais$material
+table(ind)
+soja <- soja_df[ind, ]
+glimpse(soja)
+```
+
+Dado o número de variáveis e de observações desse *dataset*, um algoritmo que se apresenta como candidato natural a esse problema de regressão é o `Random Forest`, pois ele:
+
+- Combina, num só algoritmo, *feature selection* com baixa propensão a *overfitting*
+
+- É muito flexível e, em geral, seus resultados são muito acurados
+
+Porém, o treinamento de `random forests` pode consumir muitos recursos computacionais, de modo que, para esse problema, deixaremos um dos núcleos reservado para o sistema operacional e os demais dedicados ao treinamento do modelo, conforme:
+
+```{r rf}
+## Not run (may take some time some complete)
+# modelLookup("rf")
+# grid <- expand.grid(.mtry=seq(6, 34, length.out = 5))
+# 
+# cl <- makeCluster(detectCores() - 1) # 1 núcleo fica pro SO
+# registerDoParallel(cl)
+# ctrl <- trainControl(method = "cv", number = 5, 
+#                      selectionFunction = "oneSE", allowParallel = TRUE)
+# rf <- train(productivity ~ ., data = soja, method = "rf", 
+#             tuneGrid = grid, trControl = ctrl)
+# 
+# stopCluster(cl)
+# registerDoSEQ()
+# 
+# saveRDS(rf, "rf_soja4.rds")
+## End (Not run)
+# rf <- read_rds("rf_soja4.rds")
+rf <- readRDS("rf_soja4.rds")
+prod.pred <- predict(rf)
+plot(prod.pred ~ soja$productivity,
+     xlab = "Produtividade medida, sacas/ha",
+     ylab = "Produtividade prevista, sacas/ha",
+     main = "Resultados do treinamento do modelo de produtividade de soja")
+R2 <- cor(prod.pred, soja$productivity) ^ 2
+abline(lm(prod.pred ~ soja$productivity), lwd = 2, col = "darkred")
+text(20, 80, paste0("R2 = ", round(R2, 2)))
+MAE <- function(actuals, pred) {
+  mean(abs(actuals - pred))
+}
+dma <- MAE(soja$productivity, prod.pred)
+cat("Erro médio absoluto: ", round(dma, 1), " sacas/ha")
+randomForest::varImpPlot(rf$finalModel)
+```
+
+Como se vê, a acurácia do modelo é bastante boa, com R^2^ e erro médio absoluto em níveis bastante aceitáveis.
+
+## Importância relativa das variáveis para cada tipo de semente
+
+A última etapa do projeto consiste em determinar, para cada tipo de semente, qual a importância relativa das demais variáveis na estimativa de produtividade, para fins de informação e orientação a pesquisas posteriores da FMS.
+
+Para resolver esse problema, antes de mais nada, temos de verificar de quantos tipos diferentes de sementes estamos a falar. Vejamos:
+
+```{r sementes}
+seeds <- length(unique(soja$material))
+cat("Quantidade de tipos de sementes: ", seeds, " tipos.")
+seeds <- unique(soja$material) %>% as.character()
+head(seeds)
+```
+
+Portanto, temos de treinar `r length(unique(soja$material))` diferentes modelos, um para cada semente, e depois determinar a importância relativa das demais variáveis para cada modelo correspondente. Resta evidente que, pelo baixo número de participação de cada tipo de semente no *dataset* final, faz-se desnecessário usar `random forest` para cada semente. Nossa abordagem consiste em treinar um modelo mais simples para cada semente e então determinar a importância relativa das variáveis, medida como o fator pelo qual o erro de previsão do modelo aumenta quando a variável é "embaralhada" no *dataframe* original.
+
+```{r var-imp}
+## Not run (this may take some time to complete)
+# FeatImpPerSeed <- function(seed, plt = F) {
+#   if (!Xmisc::is.package.loaded("rpart")) {
+#     require(rpart)
+#   }
+#   data <- filter(soja, material == seed)
+#   data$material <- NULL
+#   tree <- rpart(productivity ~ ., data = data)
+#   y <- data$productivity
+#   X <- data[-which(names(data) == "productivity")]
+#   mod <- Predictor$new(tree, data = X, y = y)
+  # Compute feature importances as the performance drop in mean absolute error 
+  # imp <- FeatureImp$new(mod, loss = "mae")
+  # Plot the results directly 
+#   if (plt) plot(imp)
+#   return(imp$results)
+# }
+# 
+# imp <- lapply(seeds, FeatImpPerSeed)
+# saveRDS(imp, "feature_imp_per_seed.rds")
+# 
+# for (i in seq_along(seeds)) {
+#   imp[[i]]$material <- seeds[i]
+# }
+# imp[[1]]
+# saveRDS(imp, "feature_imp_per_seed.rds")
+## End (Not run)
+imp <- readRDS("feature_imp_per_seed.rds")
+var_imp_sementes <- rlist::list.stack(imp)
+var_imp_sementes %<>% select(material, everything())
+head(seeds, 10)
+DT::datatable(var_imp_sementes)
+```

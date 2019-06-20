@@ -1,4 +1,4 @@
----
+?fastu---
 title: "Projeto FMS"
 subtitle: "AgriPredict+"
 author: "Octavio Deliberato Neto"
@@ -90,6 +90,7 @@ clima.qrt <- clima.qrt %>% select(harvest, quarter, everything(), -Date)
 clima.qrt$rain.mm <- rowMeans(clima.qrt[, 3:ncol(clima.qrt)])
 clima.qrt <- clima.qrt %>% select(harvest, quarter, rain.mm)
 str(clima.qrt)
+rio::export(x = clima.qrt, file = "clima_qrt.csv")
 ```
 
 Finalmente, por solicitação do próprio Sr. Alex Melotto, seria melhor que os dados trimestrais de precipitação fossem traduzidos em classes, e.g. "sem chuva", "pouca chuva", "chuva média", "muita chuva", em vez de números.
@@ -188,7 +189,6 @@ A seguir, unem-se os dados climáticos com os de produtividade, a fim de formar 
 
 ```{r Fase-1-10}
 clima <- read_csv("clima.csv")
-clima$harvest <- factor(clima$harvest)
 crop.df <- merge(crop, clima, by = 'harvest')
 
 crop.df$material <- str_replace_all(crop.df$material, "[^[:alnum:]]", "")
