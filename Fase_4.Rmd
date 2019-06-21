@@ -86,6 +86,7 @@ crop.df$material <- chartr(paste(names(unwanted_array), collapse=''),
                            paste(unwanted_array, collapse=''),
                            crop.df$material)
 crop.df %<>% select(everything(), -productivity, productivity)
+skim_with(numeric = list(hist = NULL))
 skim(crop.df) %>% skimr::kable()
 
 # Dados 3 - ciclo e época da soja
